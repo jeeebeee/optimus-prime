@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Optimus Prime Auction Data Viewer</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@4.0.0"></script>
+    <style>
+    body { font-family: Arial, sans-serif; margin: 2em; }
+    h2 { margin-top: 2em; }
+    .main-flex { display: flex; gap: 2em; align-items: flex-start; }
+    #tables { flex: 1 1 40%; min-width: 300px; }
+    #charts { flex: 2 1 60%; min-width: 400px; }
+    .chart-container { width: 100%; max-width: 800px; margin-bottom: 3em; }
+    table { border-collapse: collapse; margin-bottom: 2em; }
+    th, td { border: 1px solid #ccc; padding: 4px 8px; }
+    </style>
+</head>
+<body>
+    <h1>Optimus Prime Auction Data Viewer</h1>
+    <div id="errorMsg" style="color:red;margin-bottom:1em;"></div>
+    <label for="symbolChooser"><b>Symbol:</b></label>
+    <select id="symbolChooser"><option value="ALL">All</option></select>
+    <div class="main-flex">
+        <div id="tables"></div>
+        <div id="charts"></div>
+    </div>
+    <script>
+    let allCSVs = {};
+    let allSymbols = new Set();
+    let lastFiles = [];
+    const defaultFiles = [
+        'data/input_symbols.csv',
+        'data/input_orders.csv',
+        'data/input_appetites.csv'
+    ];
+    function parseCSV(text) {
+        const lines = text.trim().split(/\r?\n/);
+        const headers = lines[0].split(',');
+        return lines.slice(1).map(line => {
+            const values = line.split(',');
+            const obj = {};
+            headers.forEach((h, i) => obj[h] = values[i]);
+            return obj;
+        });
+    }
+    function renderTable(data, name) {
+    if (!data.length) return '';
+    let html = `<h3>${name}</h3><table><tr>`;
+        let colOrder = Object.keys(data[0]);
+        let sortedData = data;
+        if (name.includes('appetite')) {
+            colOrder = ['symbol', 'side', 'price', 'appetite'];
+            sortedData = [...data].sort((a, b) => {
+                if (a.symbol !== b.symbol) return a.symbol.localeCompare(b.symbol);
+                if (a.side !== b.side) return a.side.localeCompare(b.side);
+                return Number(a.price) - Number(b.price);
+            });
+        }
+        // Filter by symbol if selected
+        const selectedSymbol = document.getElementById('symbolChooser')?.value || 'ALL';
+        if (selectedSymbol !== 'ALL' && colOrder.includes('symbol')) {
+            sortedData = sortedData.filter(row => row.symbol === selectedSymbol);
+        }
+        // Always show header row
+        html += colOrder.map(h => `<th>${h}</th>`).join('');
+        html += '</tr>';
+        sortedData.forEach(row => {
+            html += '<tr>';
+            colOrder.forEach(h => html += `<td>${row[h]}</td>`);
+            html += '</tr>';
+        });
+        html += '</table>';
+        return html;
+    }
+    function renderChart(data, name) {
+    if (!data.length) return '';
+    // Filter by symbol if selected
+    const selectedSymbol = document.getElementById('symbolChooser')?.value || 'ALL';
+        // Example: For input_appetites, plot price vs appetite for each symbol/side
+        // For each symbol, show buy and sell graphs separately with headings
+        function sectionHeader(symbol, side, name, extra) {
+            return `<h3>${symbol} - ${side.toUpperCase()} ${extra ? '('+extra+')' : ''}</h3>`;
+        }
+        if (name.includes('appetites')) {
+            const symbols = [...new Set(data.map(d => d.symbol))];
+            let html = '';
+            const filteredSymbols = selectedSymbol === 'ALL' ? symbols : [selectedSymbol];
+            // Get matchprx for each symbol from input_symbols.csv
+            var matchprxMap = {};
+            if (allCSVs['data/input_symbols.csv']) {
+                allCSVs['data/input_symbols.csv'].forEach(function(row) {
+                    matchprxMap[row.symbol] = Number(row.matchprx);
+                });
+            }
+            filteredSymbols.forEach(symbol => {
+                // Appetite table and graph side-by-side
+                const appetiteData = data.filter(d => d.symbol === symbol);
+                if (!appetiteData.length) return;
+                const buyData = appetiteData.filter(d => d.side === 'buy');
+                const sellData = appetiteData.filter(d => d.side === 'sell');
+                buyData.sort((a,b) => Number(a.price) - Number(b.price));
+                sellData.sort((a,b) => Number(a.price) - Number(b.price));
+                const allPrices = Array.from(new Set([...buyData.map(d => Number(d.price)), ...sellData.map(d => Number(d.price))])).sort((a,b) => a-b);
+                function interpolate(prices, appetites, allPrices) {
+                    const result = [];
+                    for (let p of allPrices) {
+                        let idx = prices.indexOf(p);
+                        if (idx !== -1) {
+                            result.push(appetites[idx]);
+                        } else {
+                            let lower = -1, upper = -1;
+                            for (let i=0; i<prices.length; ++i) {
+                                if (prices[i] < p) lower = i;
+                                if (prices[i] > p && upper === -1) upper = i;
+                            }
+                            if (lower !== -1 && upper !== -1) {
+                                let x0 = prices[lower], x1 = prices[upper];
+                                let y0 = appetites[lower], y1 = appetites[upper];
+                                let interp = y0 + (y1-y0)*(p-x0)/(x1-x0);
+                                result.push(interp);
+                            } else if (lower !== -1) {
+                                result.push(appetites[lower]);
+                            } else if (upper !== -1) {
+                                result.push(appetites[upper]);
+                            } else {
+                                result.push(null);
+                            }
+                        }
+                    }
+                    return result;
+                }
+                const buyPrices = buyData.map(d => Number(d.price));
+                const buyAppetites = buyData.map(d => Number(d.appetite));
+                const sellPrices = sellData.map(d => Number(d.price));
+                const sellAppetites = sellData.map(d => Number(d.appetite));
+                const chartId = `chart_appetites_${symbol}_buysell`;
+                html += `<div class="main-flex"><div style="flex:2 1 100%;min-width:400px;">`;
+                html += `<h3>${symbol} - Buy/Sell Appetite Curves</h3>`;
+                html += `<div class='chart-container'><canvas id='${chartId}'></canvas></div>`;
+                html += `</div></div>`;
+                setTimeout(() => {
+                    const chartCanvas = document.getElementById(chartId);
+                    if (chartCanvas._chartInstance) {
+                        chartCanvas._chartInstance.destroy();
+                    }
+                    // Ensure annotation plugin is registered right before chart creation
+                    if (window.Chart && window['chartjs-plugin-annotation']) {
+                        try {
+                            Chart.register(window['chartjs-plugin-annotation']);
+                            console.log('Chart.js annotation plugin registered:', window['chartjs-plugin-annotation']);
+                        } catch (e) {
+                            console.warn('Chart.js annotation plugin registration failed:', e);
+                        }
+                    } else {
+                        console.warn('Chart.js annotation plugin NOT registered!');
+                    }
+                    chartCanvas._chartInstance = new Chart(chartCanvas, {
+                        type: 'line',
+                        data: {
+                            labels: allPrices,
+                            datasets: [
+                                {
+                                    label: symbol + ' Buy',
+                                    data: interpolate(buyPrices, buyAppetites, allPrices),
+                                    borderColor: 'blue',
+                                    backgroundColor: 'rgba(0,0,255,0.1)',
+                                    fill: false,
+                                    pointRadius: 2
+                                },
+                                {
+                                    label: symbol + ' Sell',
+                                    data: interpolate(sellPrices, sellAppetites, allPrices),
+                                    borderColor: 'red',
+                                    backgroundColor: 'rgba(255,0,0,0.1)',
+                                    fill: false,
+                                    pointRadius: 2
+                                }
+                            ]
+                        },
+                        options: {
+                            scales: {
+                                x: { title: { display: true, text: 'Price' } },
+                                y: { title: { display: true, text: 'Appetite' } }
+                            },
+                            plugins: {
+                                annotation: {
+                                    annotations: {
+                                        matchprxLine: {
+                                            type: 'line',
+                                            xMin: matchprxMap[symbol],
+                                            xMax: matchprxMap[symbol],
+                                            borderColor: 'black',
+                                            borderWidth: 3,
+                                            borderDash: [6, 6],
+                                            label: {
+                                                display: true,
+                                                content: 'matchprx',
+                                                position: 'start',
+                                                color: 'black',
+                                                font: { weight: 'bold', size: 14 }
+                                            },
+                                            z: 10
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    });
+                }, 100);
+            });
+            return html;
+        }
+        // For input_orders, plot price vs qty for each symbol/side
+        if (name.includes('orders')) {
+            const symbols = [...new Set(data.map(d => d.symbol))];
+            let html = '';
+            const filteredSymbols = selectedSymbol === 'ALL' ? symbols : [selectedSymbol];
+            filteredSymbols.forEach(symbol => {
+                // Orders table and graph side-by-side
+                const orderData = data.filter(d => d.symbol === symbol);
+                if (!orderData.length) return;
+                const buyOrders = orderData.filter(d => d.side === 'buy');
+                const sellOrders = orderData.filter(d => d.side === 'sell');
+                // Use ordprx and ordqty columns for plotting
+                const allPrices = Array.from(new Set([...buyOrders.map(d => Number(d.ordprx)), ...sellOrders.map(d => Number(d.ordprx))])).sort((a,b) => a-b);
+                const chartId = `chart_orders_${symbol}_buysell`;
+                html += `<div class="main-flex"><div style="flex:2 1 100%;min-width:400px;">`;
+                html += `<h3>${symbol} - Buy/Sell Orders Scatter</h3>`;
+                html += `<div class='chart-container'><canvas id='${chartId}'></canvas></div>`;
+                html += `</div></div>`;
+                setTimeout(() => {
+                    // Ensure annotation plugin is registered
+                    if (window.Chart && window['chartjs-plugin-annotation']) {
+                        Chart.register(window['chartjs-plugin-annotation']);
+                    }
+                    // Get matchprx for this symbol
+                    var matchprx = null;
+                    if (allCSVs['data/input_symbols.csv']) {
+                        allCSVs['data/input_symbols.csv'].forEach(function(row) {
+                            if (row.symbol === symbol) matchprx = Number(row.matchprx);
+                        });
+                    }
+                    var minPrice = Math.min(...allPrices);
+                    var maxPrice = Math.max(...allPrices);
+                    // Find max order quantity for yMax
+                    var allQtys = orderData.map(d => Number(d.ordqty));
+                    var maxQty = Math.max(...allQtys, 10); // fallback to 10 if no orders
+                    new Chart(document.getElementById(chartId), {
+                        type: 'scatter',
+                        data: {
+                            labels: allPrices,
+                            datasets: [
+                                {
+                                    label: `${symbol} Buy`,
+                                    data: buyOrders.map(d => ({x: Number(d.ordprx), y: Number(d.ordqty)})),
+                                    borderColor: 'blue',
+                                    backgroundColor: 'rgba(0,0,255,0.3)'
+                                },
+                                {
+                                    label: `${symbol} Sell`,
+                                    data: sellOrders.map(d => ({x: Number(d.ordprx), y: Number(d.ordqty)})),
+                                    borderColor: 'red',
+                                    backgroundColor: 'rgba(255,0,0,0.3)'
+                                }
+                            ]
+                        },
+                        options: {
+                            scales: {
+                                x: { title: { display: true, text: 'Price' } },
+                                y: { title: { display: true, text: 'Qty' }, min: 0, max: maxQty }
+                            },
+                            plugins: {
+                                annotation: {
+                                    annotations: {
+                                        buyRegion: {
+                                            type: 'box',
+                                            xMin: matchprx,
+                                            xMax: maxPrice,
+                                            yMin: 0,
+                                            yMax: maxQty,
+                                            backgroundColor: 'rgba(0,0,255,0.15)',
+                                            borderWidth: 0,
+                                            z: -10
+                                        },
+                                        sellRegion: {
+                                            type: 'box',
+                                            xMin: minPrice,
+                                            xMax: matchprx,
+                                            yMin: 0,
+                                            yMax: maxQty,
+                                            backgroundColor: 'rgba(255,0,0,0.15)',
+                                            borderWidth: 0,
+                                            z: -10
+                                        },
+                                        matchprxLine: {
+                                            type: 'line',
+                                            xMin: matchprx,
+                                            xMax: matchprx,
+                                            borderColor: 'black',
+                                            borderWidth: 3,
+                                            borderDash: [6, 6],
+                                            label: {
+                                                display: true,
+                                                content: 'matchprx',
+                                                position: 'start',
+                                                color: 'black',
+                                                font: { weight: 'bold', size: 14 }
+                                            },
+                                            z: 10
+                                        }
+                                    }
+                                },
+                                // Set chart area background color to grey
+                                chartArea: {
+                                    backgroundColor: 'rgba(200,200,200,0.5)'
+                                }
+                            }
+                        }
+                    });
+                }, 100);
+            });
+            return html;
+        }
+        // For output_adoption_verbose, plot market_executed vs adopted for each symbol/side
+        if (name.includes('output_adoption_verbose')) {
+            const symbols = [...new Set(data.map(d => d.symbol))];
+            let html = `<h2>${name} (Market Executed vs Adopted)</h2>`;
+            const filteredSymbols = selectedSymbol === 'ALL' ? symbols : [selectedSymbol];
+            filteredSymbols.forEach(symbol => {
+                ['buy','sell'].forEach(side => {
+                    const filtered = data.filter(d => d.symbol === symbol && d.side === side);
+                    if (!filtered.length) return;
+                    const market_executed = filtered.map(d => Number(d.market_executed));
+                    const adopted = filtered.map(d => Number(d.adopted));
+                    const chartId = `chart_${name}_${symbol}_${side}`;
+                    html += sectionHeader(symbol, side, name, 'Adoption Bar');
+                    html += `<div class='chart-container'><canvas id='${chartId}'></canvas></div>`;
+                    setTimeout(() => {
+                        new Chart(document.getElementById(chartId), {
+                            type: 'bar',
+                            data: {
+                                labels: filtered.map((d,i) => `${symbol} ${side} ${i+1}`),
+                                datasets: [
+                                    { label: 'Market Executed', data: market_executed, backgroundColor: 'orange' },
+                                    { label: 'Adopted', data: adopted, backgroundColor: 'green' }
+                                ]
+                            },
+                            options: { scales: { x: { title: { display: true, text: 'Order' } }, y: { title: { display: true, text: 'Qty' } } } }
+                        });
+                    }, 100);
+                });
+            });
+            return html;
+        }
+        return '';
+    }
+    // ...existing code...
+    function loadDefaultCSVs() {
+        allCSVs = {};
+        allSymbols = new Set();
+        lastFiles = defaultFiles.map(f => ({name: f}));
+        const tablesDiv = document.getElementById('tables');
+        const chartsDiv = document.getElementById('charts');
+        const errorDiv = document.getElementById('errorMsg');
+        tablesDiv.innerHTML = '';
+        chartsDiv.innerHTML = '';
+        errorDiv.innerHTML = '';
+        let loaded = 0, failed = 0;
+        defaultFiles.forEach(file => {
+            fetch(file)
+                .then(resp => {
+                    if (!resp.ok) throw new Error(`File not found: ${file}`);
+                    return resp.text();
+                })
+                .then(text => {
+                    const data = parseCSV(text);
+                    allCSVs[file] = data;
+                    data.forEach(row => { if (row.symbol) allSymbols.add(row.symbol); });
+                    loaded++;
+                    if (loaded + failed === defaultFiles.length) {
+                        if (failed > 0) {
+                            errorDiv.innerHTML = `Error: One or more CSV files could not be loaded. Please make sure <b>input_symbols.csv</b>, <b>input_orders.csv</b>, and <b>input_appetites.csv</b> exist in <b>tests/data</b> and are accessible.`;
+                        }
+                        // Populate symbol chooser
+                        const chooser = document.getElementById('symbolChooser');
+                        chooser.innerHTML = '<option value="ALL">All</option>' + [...allSymbols].map(s => `<option value="${s}">${s}</option>`).join('');
+                        // Auto-select first symbol if available
+                        if (allSymbols.size > 0) {
+                            chooser.value = [...allSymbols][0];
+                        }
+                        // Display all tables/graphs for first symbol
+                        tablesDiv.innerHTML = '';
+                        chartsDiv.innerHTML = '';
+                        defaultFiles.forEach(f => {
+                            const d = allCSVs[f];
+                            if (d) {
+                                tablesDiv.innerHTML += renderTable(d, f);
+                                chartsDiv.innerHTML += renderChart(d, f);
+                            }
+                        });
+                    }
+                })
+                .catch(err => {
+                    failed++;
+                    if (loaded + failed === defaultFiles.length) {
+                        errorDiv.innerHTML = `Error: One or more CSV files could not be loaded. Please make sure <b>input_symbols.csv</b>, <b>input_orders.csv</b>, and <b>input_appetites.csv</b> exist in <b>tests/data</b> and are accessible.`;
+                    }
+                });
+        });
+    }
+    window.addEventListener('DOMContentLoaded', loadDefaultCSVs);
+
+    document.getElementById('symbolChooser').addEventListener('change', function(e) {
+        const tablesDiv = document.getElementById('tables');
+        const chartsDiv = document.getElementById('charts');
+        tablesDiv.innerHTML = '';
+        chartsDiv.innerHTML = '';
+        defaultFiles.forEach(f => {
+            const data = allCSVs[f];
+            if (data) {
+                tablesDiv.innerHTML += renderTable(data, f);
+                chartsDiv.innerHTML += renderChart(data, f);
+            }
+        });
+    });
+
+    </script>
+</body>
+</html>
