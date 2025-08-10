@@ -32,11 +32,14 @@ class AuctionAppetite:
         closest_price = min(prices, key=lambda p: abs(p - price))
         return side_data[closest_price]
 
-    def get_appetites(self):
+    def get_appetites(self, side: str):
         appetites = []
-        for side in ['buy', 'sell']:
-            for price, qty in self.data[side].items():
-                appetites.append((self.symbol, price, qty, side))
+        for price, appetite in self.data[side].items():
+            appetites.append((price, appetite))
+        if side == 'buy':
+            appetites.sort(key=lambda x: x[0])  # sort by price ascending
+        else:
+            appetites.sort(key=lambda x: -x[0]) # sort by price descending
         return appetites
 
     def __repr__(self) -> str:
