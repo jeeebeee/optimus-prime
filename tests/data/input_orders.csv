@@ -1,3 +1,5 @@
 pid,id,symbol,side,qty,price
 -1,AAPL-buy-0,AAPL,buy,2000,110
+-1,AAPL-buy-0,AAPL,buy,2000,105
 -1,AAPL-sell-0,AAPL,sell,2000,90
+-1,AAPL-sell-0,AAPL,sell,2000,95

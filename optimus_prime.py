@@ -31,6 +31,7 @@ class OptimusPrime:
         102 100       |   B 100 @ 102
         100 0         |
         """
+        consumed_appetite = {}
         for price, appetite in side_appetite:
             for order in opposite_orders:
                 if (side == 'buy' and order.price <= price) or (side == 'sell' and order.price >= price):
@@ -38,11 +39,13 @@ class OptimusPrime:
                         stub0 = order.create_child_order(1)
                         order.add_child_order(stub0)
                     unsent_qty = order.balance_parent_qty()
-                    if(unsent_qty > 0):
-                        stubN = order.create_child_order(unsent_qty - appetite, price)
+                    if unsent_qty > 0:
+                        remaining_appetite = max(0, appetite - consumed_appetite.get(price, 0))
+                        stubN = order.create_child_order(unsent_qty - remaining_appetite, price)
+                        consumed_appetite[price] = consumed_appetite.get(price, 0) + remaining_appetite
                         order.add_child_order(stubN)
                 else:
-                    stubF = order.create_child_order(order.qty)  
+                    stubF = order.create_child_order(order.qty)
                     order.add_child_order(stubF)
 
         return self
