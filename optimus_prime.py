@@ -41,9 +41,11 @@ class OptimusPrime:
                     unsent_qty = order.balance_parent_qty()
                     if unsent_qty > 0:
                         remaining_appetite = max(0, appetite - consumed_appetite.get(price, 0))
-                        stubN = order.create_child_order(unsent_qty - remaining_appetite, price)
-                        consumed_appetite[price] = consumed_appetite.get(price, 0) + remaining_appetite
-                        order.add_child_order(stubN)
+                        qty_to_adopt = min(unsent_qty, remaining_appetite)
+                        if qty_to_adopt > 0:
+                            stubN = order.create_child_order(qty_to_adopt, price)
+                            consumed_appetite[price] = consumed_appetite.get(price, 0) + qty_to_adopt
+                            order.add_child_order(stubN)
                 else:
                     stubF = order.create_child_order(order.qty)
                     order.add_child_order(stubF)
