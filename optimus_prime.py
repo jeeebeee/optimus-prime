@@ -17,16 +17,31 @@ class OptimusPrime:
         """get opposite orders sorted by side"""
         opposite_orders = [o for o in self.state.orders if o.side != side]
         opposite_orders.sort(key=lambda x: x.price, reverse=(side == 'buy'))
-
-        for price, appetite in appetite:
+        """side / appetite here is optimus side and opposite_orders is the input orders side"""
+        """
+        sell_appetite    buy_orders
+                      |  B 2000 @ 110
+                      |   B   1 @ 110
+        105 1000      |   B 999 @ 105
+        104 500       |   B 500 @ 104
+        103 200       |   B 300 @ 103
+        102 100       |   B 100 @ 102
+        100 0         |
+        """
+        for price, appetite in side_appetite:
             total_adopted = 0
             for order in opposite_orders:
-                if order.price == price:
-                    1
-                elif order.price < price:
-                    1
+                if (side == 'buy' and order.price <= price) or (side == 'sell' and order.price >= price):
+                    if(order.balance_parent_qty() == order.qty): #has no child order / not processed yet
+                        stub0 = order.create_child_order(1)
+                        order.add_child_order(stub0)
+                    unsent_qty = order.balance_parent_qty()
+                    if(unsent_qty > 0):
+                        stubN = order.create_child_order(unsent_qty - appetite, price)
+                        order.add_child_order(stubN)
                 else:
-                    1
+                    stubF = order.create_child_order(order.qty)  
+                    order.add_child_order(stubF)
 
         return True
 
