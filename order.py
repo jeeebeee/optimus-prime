@@ -12,7 +12,7 @@ class Order:
         self.child_orders = []  # Child orders array of orders which have pid as id of this Order
 
     def __repr__(self) -> str:
-        return f"Order(qty={self.qty}, price={self.price}, symbol='{self.symbol}', side='{self.side}', id={self.id})"
+        return f"Order(qty={self.qty}, price={self.price}, symbol='{self.symbol}', side='{self.side}', id={self.id}, pid={self.pid}, child_orders={self.child_orders})"
 
     def add_child_order(self, child_order):
         """Add a child order to the child_orders array."""
