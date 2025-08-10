@@ -49,8 +49,13 @@ def generate_sample_input_appetites(n: int, symbol_params):
         writer.writerow(['symbol', 'side', 'price', 'appetite'])
         for symbol, params in symbol_params.items():
             prices = np.linspace(params['refprx']*0.98, params['refprx']*1.02, n)
-            for price in prices:
-                for side in ['buy', 'sell']:
-                    appetite = int(np.random.normal(500, 100))
-                    writer.writerow([symbol, side, round(price,2), abs(appetite)])
+            base_appetite = 500
+            for i, price in enumerate(prices):
+                t = i / (n - 1) if n > 1 else 0
+                # Buy appetite: highest at lowest price, decreases quadratically
+                buy_appetite = max(1, int(round(base_appetite * (1 - t**2))))
+                writer.writerow([symbol, 'buy', round(price,2), buy_appetite])
+                # Sell appetite: lowest at lowest price, increases quadratically
+                sell_appetite = max(1, int(round(base_appetite * (t**2))))
+                writer.writerow([symbol, 'sell', round(price,2), sell_appetite])
     return True

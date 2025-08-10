@@ -222,8 +222,8 @@
                 if (!orderData.length) return;
                 const buyOrders = orderData.filter(d => d.side === 'buy');
                 const sellOrders = orderData.filter(d => d.side === 'sell');
-                // Use ordprx and ordqty columns for plotting
-                const allPrices = Array.from(new Set([...buyOrders.map(d => Number(d.ordprx)), ...sellOrders.map(d => Number(d.ordprx))])).sort((a,b) => a-b);
+                // Use price and qty columns for plotting
+                const allPrices = Array.from(new Set([...buyOrders.map(d => Number(d.price)), ...sellOrders.map(d => Number(d.price))])).sort((a,b) => a-b);
                 const chartId = `chart_orders_${symbol}_buysell`;
                 html += `<div class="main-flex"><div style="flex:2 1 100%;min-width:400px;">`;
                 html += `<h3>${symbol} - Buy/Sell Orders Scatter</h3>`;
@@ -244,7 +244,7 @@
                     var minPrice = Math.min(...allPrices);
                     var maxPrice = Math.max(...allPrices);
                     // Find max order quantity for yMax
-                    var allQtys = orderData.map(d => Number(d.ordqty));
+                    var allQtys = orderData.map(d => Number(d.qty));
                     var maxQty = Math.max(...allQtys, 10); // fallback to 10 if no orders
                     new Chart(document.getElementById(chartId), {
                         type: 'scatter',
@@ -253,13 +253,13 @@
                             datasets: [
                                 {
                                     label: `${symbol} Buy`,
-                                    data: buyOrders.map(d => ({x: Number(d.ordprx), y: Number(d.ordqty)})),
+                                    data: buyOrders.map(d => ({x: Number(d.price), y: Number(d.qty)})),
                                     borderColor: 'blue',
                                     backgroundColor: 'rgba(0,0,255,0.3)'
                                 },
                                 {
                                     label: `${symbol} Sell`,
-                                    data: sellOrders.map(d => ({x: Number(d.ordprx), y: Number(d.ordqty)})),
+                                    data: sellOrders.map(d => ({x: Number(d.price), y: Number(d.qty)})),
                                     borderColor: 'red',
                                     backgroundColor: 'rgba(255,0,0,0.3)'
                                 }
@@ -355,7 +355,6 @@
         }
         return '';
     }
-    // ...existing code...
     function loadDefaultCSVs() {
         allCSVs = {};
         allSymbols = new Set();
